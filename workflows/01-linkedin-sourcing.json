@@ -1,1 +1,356 @@
-
+{
+  "name": "AI-Powered LinkedIn Recruitment Automation - Sanitized Demo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sourcing",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        0
+      ],
+      "id": "linkedin-sourcing-webhook",
+      "name": "Webhook"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "role",
+              "name": "role",
+              "value": "={{ $json.body.role }}",
+              "type": "string"
+            },
+            {
+              "id": "experience",
+              "name": "experience",
+              "value": "={{ $json.body.experience }}",
+              "type": "string"
+            },
+            {
+              "id": "location",
+              "name": "location",
+              "value": "={{ $json.body.location }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -500,
+        0
+      ],
+      "id": "linkedin-sourcing-input",
+      "name": "Set Role Experience Location"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=Create a Google search query for LinkedIn profiles.\nRole: {{ $json.role }}\nExperience: {{ $json.experience }}\nLocation: {{ $json.location }}\nReturn only the query text using site:linkedin.com/in."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        -260,
+        0
+      ],
+      "id": "linkedin-query-generator",
+      "name": "Generate LinkedIn Search Query",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "YOUR_OPENAI_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/apify~google-search-scraper/run-sync-get-dataset-items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "queries",
+              "value": "={{ $json.output[0].content[0].text }}"
+            },
+            {
+              "name": "maxPagesPerQuery",
+              "value": "1"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "apify-google-search",
+      "name": "Apify Google Search Scraper",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "YOUR_APIFY_CREDENTIAL_ID",
+          "name": "YOUR_APIFY_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const urls = new Set();\nfor (const item of $input.all()) {\n  const text = JSON.stringify(item.json);\n  const matches = text.match(/https?:\\/\\/[^\\s\"']*linkedin\\.com\\/in\\/[^\\s\"']*/g) || [];\n  for (const url of matches) {\n    urls.add(url.replace(/[),.]+$/, ''));\n  }\n}\nreturn [...urls].map(url => ({json: {linkedin_url: url}}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "extract-linkedin-urls",
+      "name": "Extract LinkedIn URLs"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        480,
+        0
+      ],
+      "id": "linkedin-loop",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/harvestapi~linkedin-profile-scraper/run-sync-get-dataset-items",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "profileUrls",
+              "value": "={{ JSON.stringify([$json.linkedin_url]) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "id": "linkedin-profile-scraper",
+      "name": "Apify LinkedIn Profile Scraper",
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "YOUR_APIFY_PROFILE_CREDENTIAL_ID",
+          "name": "YOUR_APIFY_PROFILE_CREDENTIAL_NAME"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const data = $json;\nconst profile = Array.isArray(data) ? (data[0] || {}) : data;\n\nreturn {\n  json: {\n    full_name: profile.full_name || profile.name || '',\n    location: profile.location || '',\n    current_position: profile.current_position || profile.position || '',\n    current_company: profile.current_company || profile.company || '',\n    headline: profile.headline || '',\n    about: profile.about || '',\n    education: profile.education || '',\n    email: profile.email || '',\n    phone: profile.phone || '',\n    linkedin_url: profile.linkedin_url || profile.url || $('Loop Over Items').item.json.linkedin_url,\n    work_history: profile.work_history || [],\n    total_experience: profile.total_experience || '',\n    source: 'linkedin',\n    status: 'new'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ],
+      "id": "parse-linkedin-profile",
+      "name": "Parse Candidate Profile"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "YOUR_SHEET_NAME",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "full_name": "={{ $json.full_name }}",
+            "location": "={{ $json.location }}",
+            "current_position": "={{ $json.current_position }}",
+            "current_company": "={{ $json.current_company }}",
+            "headline": "={{ $json.headline }}",
+            "email": "={{ $json.email }}",
+            "phone": "={{ $json.phone }}",
+            "linkedin_url": "={{ $json.linkedin_url }}",
+            "source": "={{ $json.source }}",
+            "status": "={{ $json.status }}"
+          },
+          "matchingColumns": [
+            "linkedin_url"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "candidate-sheet",
+      "name": "Save Candidate to Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "YOUR_GOOGLE_SHEETS_CREDENTIAL_NAME"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Set Role Experience Location",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Role Experience Location": {
+      "main": [
+        [
+          {
+            "node": "Generate LinkedIn Search Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate LinkedIn Search Query": {
+      "main": [
+        [
+          {
+            "node": "Apify Google Search Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify Google Search Scraper": {
+      "main": [
+        [
+          {
+            "node": "Extract LinkedIn URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract LinkedIn URLs": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Apify LinkedIn Profile Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Apify LinkedIn Profile Scraper": {
+      "main": [
+        [
+          {
+            "node": "Parse Candidate Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Candidate Profile": {
+      "main": [
+        [
+          {
+            "node": "Save Candidate to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Candidate to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}

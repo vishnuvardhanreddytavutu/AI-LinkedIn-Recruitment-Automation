@@ -1,0 +1,88 @@
+{
+  "name": "FR-11 LinkedIn Auto Connect - Sanitized Demo",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "linkedin-autoconnect",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-320, 0],
+      "id": "autoconnect-webhook",
+      "name": "Webhook",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.phantombuster.com/api/v2/agents/launch",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Phantombuster-Key-1",
+              "value": "YOUR_PHANTOMBUSTER_API_KEY"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"id\":\"YOUR_PHANTOMBUSTER_AGENT_ID\",\"argument\":{\"linkedin_url\":\"{{$json.body.linkedin_url || $json.linkedin_url}}\"}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [0, 0],
+      "id": "launch-phantombuster",
+      "name": "Launch PhantomBuster"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"message\":\"PhantomBuster launched!\",\"status\":\"success\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [320, 0],
+      "id": "respond",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Launch PhantomBuster",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Launch PhantomBuster": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": []
+}
